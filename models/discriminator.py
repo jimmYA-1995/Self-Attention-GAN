@@ -16,7 +16,7 @@ def Optimized_Block(inputs, output_channels, is_training=False):
 
     return layers.add([x_, x])
 
-def Block(inputs, output_channels, downsample=True is_training=False):
+def Block(inputs, output_channels, downsample=True, is_training=False):
     stride = 2 if downsample else 1
 
     x = layers.ReLU()(inputs)
@@ -35,7 +35,7 @@ def Block(inputs, output_channels, downsample=True is_training=False):
 
 def get_discriminator(num_classes, df_dim=16, is_training=False):
     img = Input(shape=(128, 128, 3), name='image')
-    condition_label = Input(shape=(num_classes,), name='condition_label')
+    condition_label = Input(shape=(), dtype=tf.int32, name='condition_label')
 
     x = Optimized_Block(img, df_dim * 1, is_training=is_training) # 64x64
     x = Block(x, df_dim * 2, is_training=is_training)  # 32x32
@@ -48,15 +48,12 @@ def get_discriminator(num_classes, df_dim=16, is_training=False):
 
     x = layers.ReLU()(x)
     x = tf.reduce_sum(x, axis=[1,2])
-    output = SpectralNormalization(Dense(1))(x)
-
+    
+    outputs = SpectralNormalization(layers.Dense(1))(x)
     embedding = layers.Embedding(num_classes, df_dim * 16)
-    x_label = SpectralNormalization(embedding)(condition_label)
+    label_feature = SpectralNormalization(embedding)(condition_label)
+    outputs += tf.reduce_sum(x * label_feature, axis=1, keepdims=True)
 
-    output += tf.reduce_sum(x * x_label, axis=1, keepdims=True)
-    # conv = layers.Conv2D(3, 3, 1, padding='same', activation='tanh')
-    # outputs = SpectralNormalization(conv)(x)
-
-    return Model(inputs=[z, condition_label], outputs=outputs)
+    return Model(inputs=[img, condition_label], outputs=outputs)
 
 
