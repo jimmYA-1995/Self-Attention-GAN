@@ -20,7 +20,9 @@ def test_discriminator():
 
     discriminator = get_discriminator(num_classes)
     img = tf.random.normal([batch_size, 128, 128, 3])
-    label = tf.one_hot(np.random.randint(0, num_classes, (batch_size,)), depth=num_classes)
+    label = np.random.randint(0, num_classes, (batch_size))
+    label = tf.cast(label, tf.int32)
+    
     output = discriminator([img, label])
     
     assert output.shape == [batch_size, 1], output.shape
