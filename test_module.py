@@ -1,7 +1,7 @@
 import sys
 import os
 import tensorflow as tf
-from test.test_generator import test_generator, test_discriminator
+from test import test_generator, test_discriminator
 
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
