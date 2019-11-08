@@ -26,7 +26,6 @@ def cross_entropy_g(generated_output):
     return tf.reduce_mean(tf.losses.binary_crossentropy(tf.ones_like(generated_output), generated_output))
 
 def cross_entropy_d(real_output, generated_output):
-
     real_loss = tf.reduce_mean(
         tf.losses.binary_crossentropy(tf.ones_like(real_output), real_output))
     generated_loss = tf.reduce_mean(
@@ -46,14 +45,18 @@ class Trainer(object):
         self.discriminator = get_discriminator(self.info["num_classes"])
 
         if self.config['loss'] == "cross_entropy":
+            print("use ce loss")
             self.gloss_fn = cross_entropy_g
             self.dloss_fn = cross_entropy_d
         elif self.config['loss'] == "hinge_loss":
+            print("use hinge loss")
             self.gloss_fn = hinge_loss_g
             self.dloss_fn = hinge_loss_d
+        else:
+            raise ValueError('Unsupported loss type')
 
         lr_fn_G = tf.optimizers.schedules.ExponentialDecay(1e-4, self.steps_per_epoch, decay_rate=0.99, staircase=True)
-        lr_fn_D = tf.optimizers.schedules.ExponentialDecay(4e-4, self.steps_per_epoch * self.config['update_ratio'], decay_rate=0.99, staircase=True)
+        lr_fn_D = tf.optimizers.schedules.ExponentialDecay(8e-4, self.steps_per_epoch * self.config['update_ratio'], decay_rate=0.99, staircase=True)
         self.generator_optimizer = optimizers.Adam(learning_rate=lr_fn_G, beta_1=0.)
         self.discriminator_optimizer = optimizers.Adam(learning_rate=lr_fn_D, beta_1=0.)
 
