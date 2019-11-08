@@ -43,7 +43,8 @@ class SpectralNormalization(layers.Layer):
             self._make_param()
         
     def call(self, x, training=False):
-        self.update_uv()
+        if training is False:
+            self.update_uv()
         return self.module.call(x)
 
     @tf.function
@@ -71,25 +72,36 @@ class Attention_Layer(tf.keras.layers.Layer):
     def __init__(self):
         super(Attention_Layer, self).__init__()
 
-    def build(self, inputs):
+    def build(self, input_shape):
         self.sigma = self.add_weight(shape=(),
                                      initializer='random_normal',
                                      trainable=True,
                                      name='sigma')
+        b, w, h, c = input_shape.as_list()
+        self.SN_conv = []
+        self.SN_conv.append(SpectralNormalization(layers.Conv2D(c//8, 1, 1)))
+        self.SN_conv.append(SpectralNormalization(layers.Conv2D(c // 8, 1, 1)))
+        self.SN_conv.append(SpectralNormalization(layers.Conv2D(c // 2, 1, 1)))
+        self.SN_conv.append(SpectralNormalization(layers.Conv2D(c, 1, 1)))
+
+        for i in range(len((self.SN_conv)) - 1):
+            self.SN_conv[i].build(input_shape)
+        
+        self.SN_conv[-1].build([b,w,h,c//2])
+
 
     def call(self, inputs):
-        # TODO: implement subclass of tf.keras.layers.Layer or tf.Module to track sigma
         b, w, h, c = inputs.shape.as_list()
         location_num = w * h
         downsample_num = location_num // 4
 
         # phi
-        phi = SpectralNormalization(layers.Conv2D(c//8, 1, 1))(inputs)
+        phi = self.SN_conv[0](inputs)
         phi = layers.MaxPool2D(2, 2)(phi)
         phi = tf.reshape(phi, shape=[-1, c//8, downsample_num]) # already transpose
         
         # theta
-        theta = SpectralNormalization(layers.Conv2D(c // 8, 1, 1))(inputs)
+        theta = self.SN_conv[1](inputs)
         theta = tf.reshape(theta, [-1, location_num, c//8])
 
         # attention
@@ -97,14 +109,14 @@ class Attention_Layer(tf.keras.layers.Layer):
         atten = tf.nn.softmax(atten) # [location_num, downsample_num]
         
         # g
-        g = SpectralNormalization(layers.Conv2D(c // 2, 1, 1))(inputs)
+        g = self.SN_conv[2](inputs)
         g = layers.MaxPool2D(2, 2)(g)
         g = tf.reshape(g, [-1, downsample_num, c//2])
 
         atten_g = tf.matmul(atten, g) # [location_num, c//2]
         atten_g = tf.reshape(atten_g, [-1, w, h, c//2])
 
-        atten_g = SpectralNormalization(layers.Conv2D(c, 1, 1))(atten_g)
-
+        atten_g = self.SN_conv[3](atten_g)
         return layers.add([inputs, self.sigma * atten_g])
+        
 
