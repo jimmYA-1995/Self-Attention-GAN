@@ -20,7 +20,7 @@ def test_generator():
 
     generator = get_generator(num_classes)
     z = tf.random.normal([batch_size, LATENT_DIM])
-    label = tf.one_hot(np.random.randint(0, num_classes, (batch_size,)), depth=num_classes)
+    label = tf.cast(np.random.randint(0, num_classes, (batch_size)), tf.int32)
     fake_img = generator([z, label])
     
     assert fake_img.shape == [batch_size, 128, 128, 3], fake_img.shape
