@@ -4,8 +4,7 @@ import pickle
 import os
 
 IMAGE_SIZE=128
-BUFFER_SIZE = 1000
-BATCH_SIZE = 32
+BUFFER_SIZE = 100000
 
 
 def get_dataset_from_tfrecord(config):
@@ -32,7 +31,7 @@ def get_dataset_from_tfrecord(config):
         
         return image, label
 
-    dataset = raw_dataset.take(config['data_size']).shuffle(BUFFER_SIZE).map(_preprocess).batch(BATCH_SIZE, drop_remainder=True)
+    dataset = raw_dataset.take(config['data_size']).shuffle(BUFFER_SIZE).map(_preprocess).batch(config['batch_size'], drop_remainder=True)
     return dataset
 
 def get_dataset_and_info(config):
