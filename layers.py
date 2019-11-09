@@ -74,7 +74,7 @@ class Attention_Layer(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.sigma = self.add_weight(shape=(),
-                                     initializer='random_normal',
+                                     initializer='zero',
                                      trainable=True,
                                      name='sigma')
         b, w, h, c = input_shape.as_list()
@@ -93,12 +93,12 @@ class Attention_Layer(tf.keras.layers.Layer):
     def call(self, inputs):
         b, w, h, c = inputs.shape.as_list()
         location_num = w * h
-        downsample_num = location_num // 4
+        # downsample_num = location_num // 4
 
         # phi
         phi = self.SN_conv[0](inputs)
-        phi = layers.MaxPool2D(2, 2)(phi)
-        phi = tf.reshape(phi, shape=[-1, c//8, downsample_num]) # already transpose
+        phi = layers.MaxPool2D(2, 1)(phi)
+        phi = tf.reshape(phi, shape=[-1, c//8, location_num]) # already transpose
         
         # theta
         theta = self.SN_conv[1](inputs)
@@ -110,8 +110,8 @@ class Attention_Layer(tf.keras.layers.Layer):
         
         # g
         g = self.SN_conv[2](inputs)
-        g = layers.MaxPool2D(2, 2)(g)
-        g = tf.reshape(g, [-1, downsample_num, c//2])
+        g = layers.MaxPool2D(2, 1)(g)
+        g = tf.reshape(g, [-1, location_num, c//2])
 
         atten_g = tf.matmul(atten, g) # [location_num, c//2]
         atten_g = tf.reshape(atten_g, [-1, w, h, c//2])
