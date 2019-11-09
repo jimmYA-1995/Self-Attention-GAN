@@ -32,7 +32,6 @@ def cross_entropy_d(real_output, generated_output):
         tf.losses.binary_crossentropy(tf.zeros_like(generated_output), generated_output))
 
     total_loss = real_loss + generated_loss
-
     return total_loss
 
 
@@ -80,7 +79,6 @@ class Trainer(object):
 
     @tf.function
     def train_step(self, images, labels):
-
         # Update D. n times per update of G.
         average_loss = tf.constant(0., dtype=tf.float32)
         for _ in range(self.config['update_ratio']):
@@ -126,7 +124,6 @@ class Trainer(object):
 
 
     def train(self):
-        # print("Steps per epoch: ",self.steps_per_epoch)
         log_dir = 'logs/{}'.format(self.config['path_root'])
 
         for epoch in range(self.config['epoch']):
@@ -142,7 +139,6 @@ class Trainer(object):
                     'Discriminator Loss', self.metrics['D_loss'].result(), step=epoch)
                 for name in self.var_name_list:
                     tf.summary.scalar('grads_norm/{}'.format(name), self.metrics[name].result(), step=epoch)
-
 
             # save checkpoints every 20 epochs
             if (epoch+1) % 10 == 0 and not self.config['debug']:
