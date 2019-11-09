@@ -56,7 +56,7 @@ class Trainer(object):
             raise ValueError('Unsupported loss type')
 
         lr_fn_G = tf.optimizers.schedules.ExponentialDecay(1e-4, self.steps_per_epoch, decay_rate=0.99, staircase=True)
-        lr_fn_D = tf.optimizers.schedules.ExponentialDecay(8e-4, self.steps_per_epoch * self.config['update_ratio'], decay_rate=0.99, staircase=True)
+        lr_fn_D = tf.optimizers.schedules.ExponentialDecay(4e-4, self.steps_per_epoch * self.config['update_ratio'], decay_rate=0.99, staircase=True)
         self.generator_optimizer = optimizers.Adam(learning_rate=lr_fn_G, beta_1=0.)
         self.discriminator_optimizer = optimizers.Adam(learning_rate=lr_fn_D, beta_1=0.)
 
@@ -75,7 +75,7 @@ class Trainer(object):
             self.metrics[name] = tf.keras.metrics.Mean(
             name, dtype=tf.float32)
 
-        self.random_vector = tf.random.normal([config['num_sample'], config['z_dim']])
+        self.random_vector = tf.random.normal([config['batch_size'], config['z_dim']])
         self.fix_label = tf.random.uniform((self.config['batch_size'],), 0, self.info['num_classes'], dtype=tf.int32)
 
     @tf.function
@@ -104,6 +104,7 @@ class Trainer(object):
 
         # Update G.
         noise = tf.random.normal([labels.shape[0], self.config['z_dim']])
+        fake_labels = tf.random.uniform((labels.shape[0],), 0, self.info['num_classes'], dtype=tf.int32)
         with tf.GradientTape() as gen_tape:
             generated_images = self.generator([noise, fake_labels], training=True)
             generated_output = self.discriminator([generated_images, fake_labels], training=True)
@@ -111,12 +112,12 @@ class Trainer(object):
 
         gradients_of_generator = gen_tape.gradient(
             gen_loss, self.generator.trainable_variables)
+        self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
         
         # for track gradients of specific tensors
         zip_of_generator = list(zip(gradients_of_generator, self.generator.trainable_variables))
         name_to_grads = {var[1].name: var[0] for var in zip_of_generator}
 
-        self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
 
         self.metrics['G_loss'](gen_loss)
         self.metrics['D_loss'](average_loss / self.config['update_ratio'])
@@ -175,7 +176,7 @@ class Trainer(object):
         gs = gridspec.GridSpec(8, 8)
         gs.update(wspace=0.05, hspace=0.05)
 
-        for i, sample in enumerate(samples):
+        for i, sample in enumerate(samples[:self.config['num_sample']]):
             ax = plt.subplot(gs[i])
             plt.axis('off')
             ax.set_xticklabels([])
