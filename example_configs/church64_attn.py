@@ -1,10 +1,11 @@
+output_name = "1207_church64_2attn-dwn_lrx2_z128_b64_e100"
 config = {
     "_description": "downsampled attn layer in the last2 layer of models.",
     "gpu": [0],
     
     # data
     "dataset": "Lsun_church",
-    "data_path": "/root/notebooks/data/church_outdoor_train_lmdb/",
+    "data_path": "/home/yct/data/church_outdoor_train_lmdb/Lsun_church_unlabeled_64",
     "data_size": -1,
     "use_image_generator": False,
     
@@ -20,7 +21,7 @@ config = {
     "attn_dim_G": [32, 64],
     "attn_dim_D": [8, 4],
     "use_label": False,
-    "batch_size_per_gpu": 64,
+    "batch_size": 64,
     "loss": "hinge_loss",
     "epoch": 100,
     "update_ratio": 1,
@@ -28,5 +29,7 @@ config = {
     # 
     "num_sample": 16,
     "summary_step_freq": 100,
-    "output_path": "1126_church64_2attn-dwn_lrx2_z128_b64_e100"
+    "log_dir": "logs/{}".format(output_name),
+    "ckpt_dir": "checkpoints/{}".format(output_name),
+    "img_dir": "images/{}".format(output_name)
 }

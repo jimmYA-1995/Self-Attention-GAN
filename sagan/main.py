@@ -95,8 +95,8 @@ class Trainer(object):
         # checkpoints
         self.ckpt_G = tf.train.Checkpoint(step=tf.Variable(1), optimizer=self.optimizer_G, net=self.generator)
         self.ckpt_D = tf.train.Checkpoint(step=tf.Variable(1), optimizer=self.optimizer_D, net=self.discriminator)
-        self.CkptManager_G = tf.train.CheckpointManager(self.ckpt_G, 'checkpoints/{}/G'.format(self.config['output_path']), max_to_keep=10, checkpoint_name='epoch')
-        self.CkptManager_D = tf.train.CheckpointManager(self.ckpt_D, 'checkpoints/{}/D'.format(self.config['output_path']), max_to_keep=10, checkpoint_name='epoch')
+        self.CkptManager_G = tf.train.CheckpointManager(self.ckpt_G, '{}/G'.format(self.config['ckpt_dir']), max_to_keep=10, checkpoint_name='epoch')
+        self.CkptManager_D = tf.train.CheckpointManager(self.ckpt_D, '{}/D'.format(self.config['ckpt_dir']), max_to_keep=10, checkpoint_name='epoch')
 
         # metrics
         self.metrics = {}
@@ -160,8 +160,7 @@ class Trainer(object):
 
     def train(self):
         tf.keras.backend.set_learning_phase(True)
-        log_dir = '/root/notebooks/tensorflow/logs/{}'.format(self.config['output_path'])
-        self.summary_writer = tf.summary.create_file_writer(log_dir)
+        self.summary_writer = tf.summary.create_file_writer(self.config['log_dir'])
         self.total_step = 0
         
         status_G = self.ckpt_G.restore(self.CkptManager_G.latest_checkpoint)
@@ -182,14 +181,14 @@ class Trainer(object):
             start_time = time.time()
             
             for images, labels in self.ds_train:
-                self.total_step += 1
-                if self.config['use_image_generator'] and self.total_step % 1562 ==0:
-                    break
+                # if self.config['use_image_generator'] and self.total_step % 1562 ==0:
+                #     break
                 self.train_step(images, labels)
-                if self.total_step % config['summary_step_freq'] == 0:
-                    self.summary_for_var()
-                if self.total_step % 200 == 0:
+                if self.total_step % self.config['summary_step_freq'] == 0:
                     self.summary_for_image()
+                    self.summary_for_var()
+                
+                self.total_step += 1
 
             
             with self.summary_writer.as_default():
@@ -212,6 +211,7 @@ class Trainer(object):
                 _ = self.CkptManager_D.save()
                 
             if epoch < 5 or (epoch+1) % 5 == 0:
+                print("save sample image in image directory")
                 self.save_sample_images(epoch)
 
 
@@ -222,9 +222,8 @@ class Trainer(object):
 
 
     def save_sample_images(self, epoch):
-        img_path = os.path.abspath('images/{}/'.format(self.config['output_path']))
-        if not os.path.exists(img_path):
-            os.makedirs(img_path)
+        if not os.path.exists(self.config['img_dir']):
+            os.makedirs(self.config['img_dir'])
         
         # 32x32 -> 1x1; 64x64 -> 2x2
         l = self.config['img_size'] // 32
@@ -241,7 +240,7 @@ class Trainer(object):
             ax.set_aspect('equal')
             plt.imshow(sample)
 
-        plt.savefig(os.path.join(img_path, 'epoch-{}.png'.format(str(epoch+1).zfill(3))), bbox_inches='tight')
+        plt.savefig(os.path.join(self.config['img_dir'], 'epoch-{}.png'.format(str(epoch+1).zfill(3))), bbox_inches='tight')
         plt.close(fig)
 
     def summary_for_var(self):
