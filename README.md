@@ -6,7 +6,9 @@ Original implementation: https://github.com/brain-research/self-attention-gan
 
 Usage:
 `python sagan/main.py --config_path <your-configuration-file.py>`
-Example: `python sagan/main.py --config_path example_configs/church64_attn.py`
 
-##Current results
+Example:
+`python sagan/main.py --config_path example_configs/church64_attn.py`
+
+## Current results
 
