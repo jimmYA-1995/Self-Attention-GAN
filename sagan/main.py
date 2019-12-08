@@ -164,20 +164,21 @@ class Trainer(object):
         # track metrics
         # TODO: figure out how to reduce these metrics in multi-GPU training
 
-    @tf.function
+    # @tf.function
     def distributed_train_step(self, dist_inputs):
         per_example_losses, grads_G = self.strategy.experimental_run_v2(self.train_step, args=(dist_inputs,))
         mean_loss = {}
-        for k, v in per_example_losses.item():
+        for k, v in per_example_losses.items():
             mean_loss[k] = self.strategy.reduce(
                                   tf.distribute.ReduceOp.MEAN, v, axis=0)
         
-        grads_G = self.strategy.reduce(
-                                  tf.distribute.ReduceOp.SUM, grads_G, axis=0)
-        
+        for i in range(len(grads_G)):
+            grads_G[i] = self.strategy.reduce(
+                              tf.distribute.ReduceOp.SUM, grads_G[i], axis=None)
         
         self.metrics['G_loss'](mean_loss['G_loss'])
         self.metrics['D_loss'](mean_loss['D_loss'])
+        
         for name, grads_norm in zip(self.Train_var_G, grads_G):
             self.metrics[name+'/norm'](grads_norm)
         for var in self.generator.variables:
@@ -213,11 +214,11 @@ class Trainer(object):
                     #    break
 
                     mean_loss = self.distributed_train_step(one_batch)
-                    #if self.total_step % self.config['summary_step_freq'] == 0:
-                    #    self.summary_for_image()
-                    #    self.summary_for_var()
+                    if self.total_step % self.config['summary_step_freq'] == 0:
+                        self.summary_for_image()
+                        self.summary_for_var()
 
-                    #self.total_step += 1
+                    self.total_step += 1
             
             with self.summary_writer.as_default():
                 tf.summary.scalar(
