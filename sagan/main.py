@@ -42,6 +42,11 @@ def cross_entropy_d(disc_output_real, disc_output_gen):
 class Trainer(object):
     def __init__(self, config):
         self.ds_train, self.config = get_dataset_and_info(config)
+        # ["/gpu:{}".format(i) for i in range(self.config['num_gpu'])]
+        self.strategy = tf.distribute.MirroredStrategy() \
+                        if self.config['num_gpu'] > 1 \
+                        else tf.distribute.OneDeviceStrategy(device="/gpu:0")
+
         self.steps_per_epoch = self.config['num_records'] // self.config['batch_size']
         print("total steps: ", self.steps_per_epoch * self.config['epoch'])
         
@@ -269,18 +274,24 @@ def main(config):
 
 
 if __name__ == '__main__':
+    args = get_parameters()
+    config_module = runpy.run_path(args.config_path)
+    config = config_module.get('config', None)
+    if config is None:
+        raise RuntimeError("No 'config' in configuration file")
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in config['gpu'])
+
     # Handle cuDNN failure issue.
     physical_devices = tf.config.experimental.list_physical_devices('GPU')
     assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
     for physical_device in physical_devices:
         tf.config.experimental.set_memory_growth(physical_device, True)
 
-    args = get_parameters()
-    config_module = runpy.run_path(args.config_path)
-    config = config_module.get('config', None)
     tf.config.experimental.set_visible_devices([physical_devices[i] for i in config['gpu']], 'GPU')
-    if config is None:
-        raise RuntimeError("No 'config' in configuration file")
+    config['device'] = tf.config.experimental.list_logical_devices('GPU')
+    config['num_gpu'] = len(config['device'])
+    config['batch_size'] = config['batch_size_per_gpu'] * config['num_gpu']
 
     pprint(config)
     main(config)
