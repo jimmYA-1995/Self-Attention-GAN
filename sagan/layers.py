@@ -1,5 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+        
+def l2normalize(v, eps=1e-12):
+    return tf.math.divide(v,(tf.norm(v) + eps))
 
 class SpectralNormalization(layers.Layer):
     """ Paper: https://openreview.net/forum?id=B1QRgziT-
@@ -10,7 +13,6 @@ class SpectralNormalization(layers.Layer):
         super(SpectralNormalization, self).__init__()
         self.module = module
         self.weight_name = name
-        self.W = getattr(self.module, self.weight_name)[0]
 
         if not Ip >= 1:
             raise ValueError("The number of power iterations should be positive integer")
@@ -26,14 +28,14 @@ class SpectralNormalization(layers.Layer):
             return False
 
     def _make_param(self):
-        w = getattr(self.module, self.weight_name)[0]
-        height = w.shape[-1]
-        width = tf.reshape(w, shape=(height, -1)).shape[1]
+        W = getattr(self.module, self.weight_name)[0]
+        height = W.shape[-1]
+        width = tf.reshape(W, shape=(height, -1)).shape[1]
 
         u = tf.random.normal(shape=[1, height])
         v = tf.random.normal(shape=[1, width])
-        self.u = self._l2normalize(u)
-        self.v = self._l2normalize(v)
+        self.u = l2normalize(u)
+        self.v = l2normalize(v)
 
     def build(self, input_shape):
         self.module.build(input_shape)
@@ -50,26 +52,20 @@ class SpectralNormalization(layers.Layer):
         """ Spectrally Normalized Weight
         """
         W = getattr(self.module, self.weight_name)[0]
-        tf.print("W({}): {}".format(type(W), W))
-        W_mat = tf.reshape(W, [W.shape[-1], -1])
-        tf.print("W({}): {}".format(type(W_mat), W_mat))
-
-        for _ in range(self.Ip):
-            self.v = tf.matmul(self.u, W_mat)
-            self.u = tf.matmul(self.v, tf.transpose(W_mat))
-            #self.v = self._l2normalize(tf.matmul(self.u, W_mat))
-            #self.u = self._l2normalize(tf.matmul(self.v, tf.transpose(W_mat)))
+        
+        with tf.init_scope():
+            W_mat = tf.reshape(W, [W.shape[-1], -1])
+        
+            for _ in range(self.Ip):
+                self.v = l2normalize(tf.matmul(self.u, W_mat))
+                self.u = l2normalize(tf.matmul(self.v, tf.transpose(W_mat)))
             
-        sigma = tf.reduce_sum(tf.matmul(self.u, W_mat) * self.v)
-
+            sigma = tf.reduce_sum(tf.matmul(self.u, W_mat) * self.v)
 
         if self.factor:
             sigma = sigma / self.factor
 
         W.assign(W / sigma)
-        
-    def _l2normalize(self, v, eps=1e-12):
-        return tf.math.divide(v,(tf.norm(v) + eps))
 
 
 class AttentionLayer(layers.Layer):
