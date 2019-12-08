@@ -41,10 +41,17 @@ class Trainer(object):
         self.ds_train, self.config = get_dataset_and_info(config)
         # ["/gpu:{}".format(i) for i in range(self.config['num_gpu'])]
         self.strategy = tf.distribute.MirroredStrategy() \
+<<<<<<< HEAD
                         if len(self.config['gpu']) > 1 \
                         else tf.distribute.OneDeviceStrategy(device="/gpu:0")
 
         self.steps_per_epoch = self.config['num_records'] // self.config['global_batch_size']
+=======
+                        if self.config['num_gpu'] > 1 \
+                        else tf.distribute.OneDeviceStrategy(device="/gpu:0")
+
+        self.steps_per_epoch = self.config['num_records'] // self.config['batch_size']
+>>>>>>> 5ef99693ce664dd6f943721261217f2064f56b39
         print("total steps: ", self.steps_per_epoch * self.config['epoch'])
         
         self.ds_train = self.strategy.experimental_distribute_dataset(self.ds_train)
@@ -304,7 +311,10 @@ if __name__ == '__main__':
         raise RuntimeError("No 'config' in configuration file")
 
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in config['gpu'])
+<<<<<<< HEAD
     config['global_batch_size'] = config['batch_size'] * len(config['gpu'])
+=======
+>>>>>>> 5ef99693ce664dd6f943721261217f2064f56b39
 
     # Handle cuDNN failure issue.
     physical_devices = tf.config.experimental.list_physical_devices('GPU')
@@ -312,10 +322,17 @@ if __name__ == '__main__':
     for physical_device in physical_devices:
         tf.config.experimental.set_memory_growth(physical_device, True)
 
+<<<<<<< HEAD
     # tf.config.experimental.set_visible_devices([physical_devices[i] for i in config['gpu']], 'GPU')
     # config['device'] = tf.config.experimental.list_logical_devices('GPU')
     # config['num_gpu'] = len(config['device'])
     # config['batch_size'] = config['batch_size_per_gpu'] * config['num_gpu']
+=======
+    tf.config.experimental.set_visible_devices([physical_devices[i] for i in config['gpu']], 'GPU')
+    config['device'] = tf.config.experimental.list_logical_devices('GPU')
+    config['num_gpu'] = len(config['device'])
+    config['batch_size'] = config['batch_size_per_gpu'] * config['num_gpu']
+>>>>>>> 5ef99693ce664dd6f943721261217f2064f56b39
 
     pprint(config)
     main(config)
