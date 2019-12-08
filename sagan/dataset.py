@@ -7,7 +7,7 @@ from glob import glob
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 
-BUFFER_SIZE = 100000
+BUFFER_SIZE = 30000
 
 def get_dataset_from_tfrecord(config):
     print("Get dataset from tfrecords")
@@ -36,7 +36,7 @@ def get_dataset_from_tfrecord(config):
         return image, label
 
     dataset = raw_dataset.take(config['data_size']).shuffle(BUFFER_SIZE).map(_preprocess)
-    dataset = dataset.batch(config['batch_size'], drop_remainder=True)
+    dataset = dataset.batch(config['global_batch_size'], drop_remainder=True)
     return dataset
 
 
@@ -83,7 +83,7 @@ def get_dataset_from_generator(config):
                 color_mode='rgb',
                 classes=None,
                 class_mode='sparse',
-                batch_size=config['batch_size'],
+                batch_size=config['global_batch_size'],
                 shuffle=True,
                 seed=None,
                 save_to_dir='/root/notebooks/data/generated',
@@ -122,7 +122,7 @@ def get_dataset_from_tfds(ds_name, config):
         label = tf.zeros(shape=(), dtype=tf.int64)
         return img, label
     
-    dataset = data['train'].take(config['data_size']).map(_preprocess).batch(config['batch_size'], drop_remainder=True)
+    dataset = data['train'].take(config['data_size']).map(_preprocess).batch(config['global_batch_size'], drop_remainder=True)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return dataset, config
