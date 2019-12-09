@@ -18,7 +18,7 @@ def get_generator(config):
     
     if config['use_label']:
         one_hot_label = tf.one_hot(condition_label, depth=config['num_classes'])
-        x = layers.Concatenate()([x, one_hot_label])
+        x = layers.Concatenate()([z, one_hot_label])
     else:
         x = z
 
