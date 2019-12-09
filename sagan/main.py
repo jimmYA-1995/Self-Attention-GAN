@@ -116,16 +116,18 @@ class Trainer(object):
 
     @tf.function
     def train_step(self, images, labels):
+        if not self.config['use_label']:
+            labels = tf.cast(labels, tf.int32)
         # Update D. n times per update of G.
         accu_loss = tf.constant(0., dtype=tf.float32)
         for _ in range(self.config['update_ratio']):
             noise = tf.random.normal([images.shape[0], self.config['z_dim']])
-            fake_labels = tf.random.uniform((labels.shape[0],), 0, self.config['num_classes'], dtype=tf.int32)
-            generated_images = self.generator([noise, fake_labels], training=True)
+            # fake_labels = tf.random.uniform((labels.shape[0],), 0, self.config['num_classes'], dtype=tf.int32)
+            generated_images = self.generator([noise, labels], training=True)
 
             with tf.GradientTape() as disc_tape:
                 disc_output_real = self.discriminator([images, labels], training=True)
-                disc_output_gen = self.discriminator([generated_images, fake_labels], training=True)
+                disc_output_gen = self.discriminator([generated_images, labels], training=True)
                 disc_loss  = self.dloss_fn(disc_output_real, disc_output_gen)
 
                 # for computing average loss of this train_step
@@ -139,10 +141,10 @@ class Trainer(object):
 
         # Update G.
         noise = tf.random.normal([labels.shape[0], self.config['z_dim']])
-        fake_labels = tf.random.uniform((labels.shape[0],), 0, self.config['num_classes'], dtype=tf.int32)
+        # fake_labels = tf.random.uniform((labels.shape[0],), 0, self.config['num_classes'], dtype=tf.int32)
         with tf.GradientTape() as gen_tape:
-            generated_images = self.generator([noise, fake_labels], training=True)
-            disc_output_gen = self.discriminator([generated_images, fake_labels], training=True)
+            generated_images = self.generator([noise, labels], training=True)
+            disc_output_gen = self.discriminator([generated_images, labels], training=True)
             gen_loss = self.gloss_fn(disc_output_gen)
 
         grads_G = gen_tape.gradient(
@@ -269,19 +271,27 @@ def main(config):
 
 
 if __name__ == '__main__':
+    args = get_parameters()
+    config_module = runpy.run_path(args.config_path)
+    config = config_module.get('config', None)
+    if config is None:
+        raise RuntimeError("No 'config' in configuration file")
+    if len(config['gpu']) > 1:
+        raise RuntimeError("only 1 GPU in this branch")
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(x) for x in config['gpu'])
+
     # Handle cuDNN failure issue.
     physical_devices = tf.config.experimental.list_physical_devices('GPU')
     assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
     for physical_device in physical_devices:
         tf.config.experimental.set_memory_growth(physical_device, True)
 
-    args = get_parameters()
-    config_module = runpy.run_path(args.config_path)
-    config = config_module.get('config', None)
-    tf.config.experimental.set_visible_devices([physical_devices[i] for i in config['gpu']], 'GPU')
-    if config is None:
-        raise RuntimeError("No 'config' in configuration file")
-
+    # tf.config.experimental.set_visible_devices([physical_devices[i] for i in config['gpu']], 'GPU')
+    # config['device'] = tf.config.experimental.list_logical_devices('GPU')
+    # config['num_gpu'] = len(config['device'])
+    # config['batch_size'] = config['batch_size_per_gpu'] * config['num_gpu']
+    
     pprint(config)
     main(config)
 
