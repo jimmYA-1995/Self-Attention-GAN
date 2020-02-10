@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import os
-import sys
 import time
 import runpy
 import numpy as np
@@ -138,7 +137,6 @@ class Trainer(object):
         
             grads_D = disc_tape.gradient(
                 disc_loss_per_example, self.discriminator.trainable_variables)
-
             self.optimizer_D.apply_gradients(
                 zip(grads_D, self.discriminator.trainable_variables))
         disc_loss = accu_loss / self.config['update_ratio']
@@ -157,30 +155,31 @@ class Trainer(object):
         self.optimizer_G.apply_gradients(zip(grads_G, self.generator.trainable_variables))
         
         per_example_losses = {
-            "G_loss": gen_loss,
-            "D_loss": disc_loss    
+           "G_loss": gen_loss,
+           "D_loss": disc_loss    
         }
         return per_example_losses, grads_G
-        # track metrics
-        # TODO: figure out how to reduce these metrics in multi-GPU training
 
-    # @tf.function
+    @tf.function
     def distributed_train_step(self, dist_inputs):
         per_example_losses, grads_G = self.strategy.experimental_run_v2(self.train_step, args=(dist_inputs,))
         mean_loss = {}
         for k, v in per_example_losses.items():
             mean_loss[k] = self.strategy.reduce(
-                                  tf.distribute.ReduceOp.MEAN, v, axis=0)
+                                  tf.distribute.ReduceOp.SUM, v, axis=0)
+            mean_loss[k] = mean_loss[k] / self.config['global_batch_size']
         
-        for i in range(len(grads_G)):
-            grads_G[i] = self.strategy.reduce(
-                              tf.distribute.ReduceOp.SUM, grads_G[i], axis=None)
+        grads_norm = []
+        for grads in grads_G:
+            if grads is not None:
+                grads_norm.append(self.strategy.reduce(
+                              tf.distribute.ReduceOp.SUM, grads, axis=None))
         
         self.metrics['G_loss'](mean_loss['G_loss'])
         self.metrics['D_loss'](mean_loss['D_loss'])
         
-        for name, grads_norm in zip(self.Train_var_G, grads_G):
-            self.metrics[name+'/norm'](grads_norm)
+        #for name, grads_norm in zip(self.Train_var_G, grads_G):
+        #    self.metrics[name+'/norm'](grads_norm)
         for var in self.generator.variables:
             self.metrics[var.name](var)
         
@@ -221,17 +220,13 @@ class Trainer(object):
                     self.total_step += 1
             
             with self.summary_writer.as_default():
-                tf.summary.scalar(
-                    'Generator Loss', self.metrics['G_loss'].result(), step=epoch)
-                tf.summary.scalar(
-                    'Discriminator Loss', self.metrics['D_loss'].result(), step=epoch)
+                tf.summary.scalar('Generator Loss', self.metrics['G_loss'].result(), step=epoch)
+                tf.summary.scalar('Discriminator Loss', self.metrics['D_loss'].result(), step=epoch)
                 for name in self.Train_var_G:
                     tf.summary.scalar('grads_norm/{}'.format(name), self.metrics[name+'/norm'].result(), step=epoch)
-                
 
             template = 'Epoch({:.2f} sec): {}, gen_loss: {}, disc_loss: {}'
-            print(template.format(time.time()-start_time, epoch+1, self.metrics['G_loss'].result(), self.metrics['D_loss'].result()))
-            sys.stdout.flush()
+            print(template.format(time.time()-start_time, epoch+1, self.metrics['G_loss'].result(), self.metrics['D_loss'].result()), flush=True)
             
             # save checkpoints & sample images
             if epoch == 5 or int(self.ckpt_G.step) % 10 == 0:

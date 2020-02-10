@@ -1,20 +1,19 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model, Input, layers
-from layers import SpectralNormalization, AttentionLayer
+from layers import SpectralNormalization, SNConv2DTranspose, SNDense, AttentionLayer
 
 
 def Block(inputs, output_channels):
-    convtr = layers.Conv2DTranspose(output_channels, 4, 2, padding='same', use_bias=False)
-    x = SpectralNormalization(convtr)(inputs)
+    x = SNConv2DTranspose(output_channels, 4, 2, padding='same', use_bias=False)(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.LeakyReLU(alpha=0.1)(x)
     return x
 
 def get_generator(config):
     gf_dim = config['gf_dim']
-    z = Input(shape=(config['z_dim'],), name='noisy')
-    condition_label = Input(shape=(), dtype=tf.int32, name='condition_label')
+    z = Input(shape=(config['z_dim'],), batch_size=config['batch_size'], name='noisy')
+    condition_label = Input(shape=(), batch_size=config['batch_size'], dtype=tf.int32, name='condition_label')
     
     if config['use_label']:
         one_hot_label = tf.one_hot(condition_label, depth=config['num_classes'])
@@ -22,7 +21,7 @@ def get_generator(config):
     else:
         x = z
 
-    x = SpectralNormalization(layers.Dense(4 * 4 * gf_dim * 16))(x)
+    x = SNDense(4 * 4 * gf_dim * 16)(x)
     x = tf.reshape(x, [-1, 4, 4, gf_dim * 16])
 
     # to handle different size of images.
@@ -40,17 +39,14 @@ def get_generator(config):
 def Res_Block(inputs, output_channels):
     x = layers.BatchNormalization()(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
-    x = SpectralNormalization(convtr)(x)
+    x = SNConv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)(x)
     x = layers.BatchNormalization()(x)
     x = layers.LeakyReLU(alpha=0.1)(x)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 1, padding='same', activation='relu', use_bias=False)
-    x = SpectralNormalization(convtr)(x)
+    x = SNConv2DTranspose(output_channels, 3, 1, padding='same', activation='relu', use_bias=False)(x)
 
     x_ = layers.BatchNormalization()(inputs)
     x_ = layers.LeakyReLU(alpha=0.1)(x_)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
-    x_ = SpectralNormalization(convtr)(x_)
+    x_ = SNConv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)(x_)
 
     return layers.add([x_, x])
 
@@ -64,7 +60,7 @@ def get_res_generator(config):
     else:
         x = z
         
-    x = SpectralNormalization(layers.Dense(4 * 4 * gf_dim * 2 ** (power-1)))(x)
+    x = SNDense(4 * 4 * gf_dim * 2 ** (power-1))(x)
     x = tf.reshape(x, [-1, 4, 4, gf_dim * 2 ** (power-1)])
     
     # to handle different size of images.

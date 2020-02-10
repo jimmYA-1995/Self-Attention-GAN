@@ -1,19 +1,18 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model, Input, layers
-from layers import SpectralNormalization, AttentionLayer
+from layers import SpectralNormalization, SNConv2D, SNDense, AttentionLayer
 
 
 def Block(inputs, output_channels):
-    conv = layers.Conv2D(output_channels, 4, 2, padding='same')
-    x = SpectralNormalization(conv)(inputs)
+    x = SNConv2D(output_channels, 4, 2, padding='same')(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
     return x
 
 def get_discriminator(config):
     df_dim = config['df_dim']
-    img = Input(shape=(config['img_size'], config['img_size'], 3), name='image')
-    condition_label = Input(shape=(), dtype=tf.int32, name='condition_label')
+    img = Input(shape=(config['img_size'], config['img_size'], 3), batch_size=config['batch_size'], name='image')
+    condition_label = Input(shape=(), batch_size=config['batch_size'], dtype=tf.int32, name='condition_label')
     x = img
     
     # to handle different size of images.
@@ -26,8 +25,9 @@ def get_discriminator(config):
     if config['use_label']:
         x = tf.reduce_sum(x, axis=[1,2])
         outputs = layers.Dense(1)(x)
-        embedding = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))
-        label_feature = SpectralNormalization(embedding)(condition_label)
+        # embedding = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))
+        # label_feature = SpectralNormalization(embedding)(condition_label)
+        label_feature = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))(condition_label)
         outputs += tf.reduce_sum(x * label_feature, axis=1, keepdims=True)
         return Model(inputs=[img, condition_label], outputs=outputs)
     else:
@@ -35,15 +35,13 @@ def get_discriminator(config):
         return Model(inputs=[img, condition_label], outputs=outputs)
 
 def Optimized_Block(inputs, output_channels):
-    conv = layers.Conv2D(output_channels, 3, 1, padding='same')
-    x = SpectralNormalization(conv)(inputs)
+    x = SNConv2D(output_channels, 3, 1, padding='same')(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
 
-    conv = layers.Conv2D(output_channels, 3, 2, padding='same') # downsample
+    x = SNConv2D(output_channels, 3, 2, padding='same')(x) # downsample
     x = SpectralNormalization(conv)(x)
 
-    conv = layers.Conv2D(output_channels, 3, 2, padding='same')
-    x_ = SpectralNormalization(conv)(inputs)
+    x_ = SNConv2D(output_channels, 3, 2, padding='same')(inputs)
 
     return layers.add([x_, x])
 
@@ -51,16 +49,13 @@ def Res_Block(inputs, output_channels, downsample=True):
     stride = 2 if downsample else 1
 
     x = layers.LeakyReLU(alpha=0.1)(inputs)
-    conv = layers.Conv2D(output_channels, 3, 1, padding='same')
-    x = SpectralNormalization(conv)(x)
+    x = SNConv2D(output_channels, 3, 1, padding='same')(x)
     
     x = layers.LeakyReLU(alpha=0.1)(x)
-    conv = layers.Conv2D(output_channels, 3, stride, padding='same')
-    x = SpectralNormalization(conv)(x)
+    x = SNConv2D(output_channels, 3, stride, padding='same')(x)
 
     x_ = layers.LeakyReLU(alpha=0.1)(inputs)
-    conv = layers.Conv2D(output_channels, 3, stride, padding='same')
-    x_ = SpectralNormalization(conv)(x_)
+    x_ = SNConv2D(output_channels, 3, stride, padding='same')(x_)
 
     return layers.add([x_, x])
 
@@ -82,9 +77,11 @@ def get_res_discriminator(config):
     if config['use_label']:
         x = layers.ReLU()(x)
         x = tf.reduce_sum(x, axis=[1,2])
-        outputs = SpectralNormalization(layers.Dense(1))(x)
-        embedding = layers.Embedding(config['num_classes'], df_dim * 16)
-        label_feature = SpectralNormalization(embedding)(condition_label)
+        outputs = SNDense(1)(x)
+        # embedding = layers.Embedding(config['num_classes'], df_dim * 16)
+        # label_feature = SpectralNormalization(embedding)(condition_label)
+        label_feature = layers.Embedding(config['num_classes'], df_dim * 16)(condition_label)
+        
         outputs += tf.reduce_sum(x * label_feature, axis=1, keepdims=True)
         return Model(inputs=[img, condition_label], outputs=outputs)
     else:
