@@ -1,12 +1,11 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model, Input, layers
-from layers import WeightNormalization, AttentionLayer
+from layers import SpectralNormalization, SNConv2DTranspose, SNDense, AttentionLayer
 
 
 def Block(inputs, output_channels):
-    convtr = layers.Conv2DTranspose(output_channels, 4, 2, padding='same', use_bias=False)
-    x = WeightNormalization(convtr)(inputs)
+    x = SNConv2DTranspose(output_channels, 4, 2, padding='same', use_bias=False)(inputs)
     x = layers.BatchNormalization()(x)
     x = layers.LeakyReLU(alpha=0.1)(x)
     return x
@@ -22,7 +21,7 @@ def get_generator(config):
     else:
         x = z
 
-    x = WeightNormalization(layers.Dense(4 * 4 * gf_dim * 16))(x)
+    x = SNDense(4 * 4 * gf_dim * 16)(x)
     x = tf.reshape(x, [-1, 4, 4, gf_dim * 16])
 
     # to handle different size of images.
@@ -40,17 +39,14 @@ def get_generator(config):
 def Res_Block(inputs, output_channels):
     x = layers.BatchNormalization()(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
-    x = WeightNormalization(convtr)(x)
+    x = SNConv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)(x)
     x = layers.BatchNormalization()(x)
     x = layers.LeakyReLU(alpha=0.1)(x)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 1, padding='same', activation='relu', use_bias=False)
-    x = WeightNormalization(convtr)(x)
+    x = SNConv2DTranspose(output_channels, 3, 1, padding='same', activation='relu', use_bias=False)(x)
 
     x_ = layers.BatchNormalization()(inputs)
     x_ = layers.LeakyReLU(alpha=0.1)(x_)
-    convtr_ = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
-    x_ = WeightNormalization(convtr_)(x_)
+    x_ = SNConv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)(x_)
 
     return layers.add([x_, x])
 
@@ -64,7 +60,7 @@ def get_res_generator(config):
     else:
         x = z
         
-    x = WeightNormalization(layers.Dense(4 * 4 * gf_dim * 2 ** (power-1)))(x)
+    x = SNDense(4 * 4 * gf_dim * 2 ** (power-1))(x)
     x = tf.reshape(x, [-1, 4, 4, gf_dim * 2 ** (power-1)])
     
     # to handle different size of images.
