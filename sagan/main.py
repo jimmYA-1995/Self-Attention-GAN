@@ -2,6 +2,7 @@
 import os
 import time
 import runpy
+import scipy
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
@@ -13,6 +14,7 @@ from tensorflow.keras.optimizers.schedules import ExponentialDecay
 from models import get_generator, get_discriminator, get_res_generator, get_res_discriminator
 from dataset import get_dataset_and_info
 from utils.parameters import get_parameters
+from utils.utils import load_pkl, save_pkl
 
 
 # Define both loss function
@@ -33,6 +35,53 @@ def cross_entropy_d(disc_output_real, disc_output_gen):
 
     total_loss = real_loss + generated_loss
     return total_loss
+
+def calculate_FID(model, datasets, dataset_name, num_images, batch_size):
+    """ calculate Frechet Inception Distance score
+        (1) doesn't fix the latents & labels here.
+        (2) Can I use the normalized images to feed inception_v3?
+    """
+    img_shape = next(iter(datasets))[0].values[0].numpy()[0].shape
+    inception_v3 = tf.keras.applications.InceptionV3(input_shape=img_shape, include_top=False, weights='imagenet')
+    activations = np.empty([num_images, inception_v3.output_shape[-1]], dtype=np.float32)
+    
+    cache_file = ".cache/{}_{}_{}.pkl".format(dataset_name, img_shape[0], num_images)
+    
+    # get the statistics of real
+    if os.path.isfile(cache_file):
+        mu_real, sigma_real = load_pkl(cache_file)
+    else:
+        for idx, images in enumerate(datasets):
+            images = images[0].values[0]
+            begin = idx * batch_size
+            print("{} / {}\r".format(begin, num_images), end="", flush=True)
+            end = min(begin + batch_size, num_images)
+            result = inception_v3(images[:end-begin])
+            result = tf.nn.avg_pool2d(result, [1,2,2,1], 1, 'VALID')
+            activations[begin:end] = result[-1].numpy()
+            if end == num_images:
+                break
+        mu_real = np.mean(activations, axis=0)
+        sigma_real = np.cov(activations, rowvar=False)
+        save_pkl((mu_real, sigma_real), cache_file)
+    
+    # get statistic for fake
+    latents = tf.random.normal([num_images, 128]) # freeze zdim for now.
+    labels = tf.random.uniform((num_images,), 0, 1, dtype=tf.int32) # freeze num of class for now.
+    activations = np.empty([num_images, inception_v3.output_shape[-1]], dtype=np.float32)
+    for begin in range(0, num_images, batch_size):
+        end = min(begin + batch_size, num_images)
+        result = inception_v3(model([latents[begin:end], labels[begin:end]], training=False))
+        result = tf.nn.avg_pool2d(result, [1,2,2,1], 1, 'VALID')
+        activations[begin:end] = result[-1].numpy()
+    mu_fake = np.mean(activations, axis=0)
+    sigma_fake = np.cov(activations, rowvar=False)
+    
+    # Calculate FID.
+    m = np.square(mu_fake - mu_real).sum()
+    s, _ = scipy.linalg.sqrtm(np.dot(sigma_fake, sigma_real), disp=False)
+    dist =  m + np.trace(sigma_fake + sigma_real - 2*s)
+    return np.real(dist)
 
 
 class Trainer(object):
@@ -117,6 +166,7 @@ class Trainer(object):
 
         self.fixed_vector = tf.random.normal([config['batch_size'], config['z_dim']])
         self.fixed_label = tf.random.uniform((self.config['batch_size'],), 0, self.config['num_classes'], dtype=tf.int32)
+        
 
     def train_step(self, inputs):
         images, labels = inputs
@@ -218,15 +268,17 @@ class Trainer(object):
                         self.summary_for_var()
 
                     self.total_step += 1
-            
+            # print("calculating FID...\r", end="", flush=True)
+            # fid = calculate_FID(self.generator, self.ds_train, self.config['dataset'], self.config['num_images'], 8)
+            fid = "Not compute"
             with self.summary_writer.as_default():
                 tf.summary.scalar('Generator Loss', self.metrics['G_loss'].result(), step=epoch)
                 tf.summary.scalar('Discriminator Loss', self.metrics['D_loss'].result(), step=epoch)
                 for name in self.Train_var_G:
                     tf.summary.scalar('grads_norm/{}'.format(name), self.metrics[name+'/norm'].result(), step=epoch)
 
-            template = 'Epoch({:.2f} sec): {}, gen_loss: {}, disc_loss: {}'
-            print(template.format(time.time()-start_time, epoch+1, self.metrics['G_loss'].result(), self.metrics['D_loss'].result()), flush=True)
+            template = 'Epoch({:.2f} sec): {}, gen_loss: {}, disc_loss: {}, FID: {}'
+            print(template.format(time.time()-start_time, epoch+1, self.metrics['G_loss'].result(), self.metrics['D_loss'].result(), fid), flush=True)
             
             # save checkpoints & sample images
             if epoch == 5 or int(self.ckpt_G.step) % 10 == 0:
@@ -235,7 +287,7 @@ class Trainer(object):
                 _ = self.CkptManager_D.save()
                 
             if epoch < 5 or (epoch+1) % 5 == 0:
-                print("save sample image in image directory")
+                print("save sample image in image directory\r", end="", flush=True)
                 self.save_sample_images(epoch)
 
 
@@ -285,10 +337,13 @@ class Trainer(object):
                              self.samples[:16],
                              max_outputs=16,
                              step=self.total_step)
-            
+    def _return_ds(self):
+        return self.ds_train
+
 
 def main(config):
     trainer = Trainer(config)
+    # return trainer._return_ds()
     trainer.train()
 
 

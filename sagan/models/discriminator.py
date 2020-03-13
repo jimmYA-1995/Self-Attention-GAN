@@ -5,7 +5,8 @@ from layers import SpectralNormalization, SNConv2D, SNDense, AttentionLayer
 
 
 def Block(inputs, output_channels):
-    x = SNConv2D(output_channels, 4, 2, padding='same')(inputs)
+    conv = layers.Conv2D(output_channels, 4, 2, padding='same')
+    x = SpectralNormalization(conv)(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
     return x
 
@@ -35,13 +36,15 @@ def get_discriminator(config):
         return Model(inputs=[img, condition_label], outputs=outputs)
 
 def Optimized_Block(inputs, output_channels):
-    x = SNConv2D(output_channels, 3, 1, padding='same')(inputs)
+    conv = layers.Conv2D(output_channels, 3, 1, padding='same')
+    x = SpectralNormalization(conv)(inputs)
     x = layers.LeakyReLU(alpha=0.1)(x)
 
-    x = SNConv2D(output_channels, 3, 2, padding='same')(x) # downsample
+    conv = layers.Conv2D(output_channels, 3, 2, padding='same') # downsample
     x = SpectralNormalization(conv)(x)
 
-    x_ = SNConv2D(output_channels, 3, 2, padding='same')(inputs)
+    conv_ = layers.Conv2D(output_channels, 3, 2, padding='same')
+    x_ = SpectralNormalization(conv_)(inputs)
 
     return layers.add([x_, x])
 
@@ -49,14 +52,17 @@ def Res_Block(inputs, output_channels, downsample=True):
     stride = 2 if downsample else 1
 
     x = layers.LeakyReLU(alpha=0.1)(inputs)
-    x = SNConv2D(output_channels, 3, 1, padding='same')(x)
+    conv = layers.Conv2D(output_channels, 3, 1, padding='same')
+    x = SpectralNormalization(conv)(x)
     
     x = layers.LeakyReLU(alpha=0.1)(x)
-    x = SNConv2D(output_channels, 3, stride, padding='same')(x)
-
+    conv = layers.Conv2D(output_channels, 3, stride, padding='same')
+    x = SpectralNormalization(conv)(x)
+    
     x_ = layers.LeakyReLU(alpha=0.1)(inputs)
-    x_ = SNConv2D(output_channels, 3, stride, padding='same')(x_)
-
+    conv_ = layers.Conv2D(output_channels, 3, stride, padding='same')(x_)
+    x = SpectralNormalization(conv_)(x_)
+    
     return layers.add([x_, x])
 
 def get_res_discriminator(config):
@@ -77,7 +83,8 @@ def get_res_discriminator(config):
     if config['use_label']:
         x = layers.ReLU()(x)
         x = tf.reduce_sum(x, axis=[1,2])
-        outputs = SNDense(1)(x)
+        outputs = SpectralNormalization(layers.Dense(1))(x)
+    
         # embedding = layers.Embedding(config['num_classes'], df_dim * 16)
         # label_feature = SpectralNormalization(embedding)(condition_label)
         label_feature = layers.Embedding(config['num_classes'], df_dim * 16)(condition_label)
