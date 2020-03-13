@@ -5,35 +5,9 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from glob import glob
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras import datasets
 
 
-BUFFER_SIZE = 100000
-
-def preprocess(x, y):
-    x = tf.cast(x, tf.float32) / 127.5 - 1
-    # y = tf.one_hot(tf.squeeze(y, axis=-1), 10)
-    y = tf.squeeze(tf.cast(y, tf.int32), axis=-1)
-
-    return x, y
-
-
-def get_cifar10(config, data_size_ratio=1.):
-    (x_train, y_train), (x_test, y_test) = datasets.cifar10.load_data()
-    train_size = int(x_train.shape[0] * data_size_ratio)
-    test_size = int(x_test.shape[0] * data_size_ratio)
-    config.update({
-        'num_records': train_size,
-        'img_size': 32,
-        'num_classes': 10
-    })
-
-    preprocessed_data = preprocess(x_train, y_train)
-
-    ds_train = tf.data.Dataset.from_tensor_slices(preprocessed_data)
-    ds_train = ds_train.shuffle(x_train.shape[0]).batch(config['batch_size'], drop_remainder=True)
-
-    return ds_train, config
+BUFFER_SIZE = 30000
 
 def get_dataset_from_tfrecord(config):
     print("Get dataset from tfrecords")
@@ -62,7 +36,7 @@ def get_dataset_from_tfrecord(config):
         return image, label
 
     dataset = raw_dataset.take(config['data_size']).shuffle(BUFFER_SIZE).map(_preprocess)
-    dataset = dataset.batch(config['batch_size'], drop_remainder=True)
+    dataset = dataset.batch(config['global_batch_size'], drop_remainder=True)
     return dataset
 
 
@@ -109,7 +83,7 @@ def get_dataset_from_generator(config):
                 color_mode='rgb',
                 classes=None,
                 class_mode='sparse',
-                batch_size=config['batch_size'],
+                batch_size=config['global_batch_size'],
                 shuffle=True,
                 seed=None,
                 save_to_dir='/root/notebooks/data/generated',
@@ -148,25 +122,24 @@ def get_dataset_from_tfds(ds_name, config):
         label = tf.zeros(shape=(), dtype=tf.int64)
         return img, label
     
-    dataset = data['train'].take(config['data_size']).map(_preprocess).batch(config['batch_size'], drop_remainder=True)
+    dataset = data['train'].take(config['data_size']).map(_preprocess).batch(config['global_batch_size'], drop_remainder=True)
     dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return dataset, config
     
 
 def get_dataset_and_info(config):
-    if config['dataset'] == 'cifar10':
-        dataset, config = get_cifar10(config)
-    else:
-        with open(os.path.join(config['data_path'], 'metadata.pickle'), 'rb') as f:
-            info = pickle.load(f)
-        config.update(info)
+    #if config['dataset'] == 'CelebA':
+    #    dataset, config = get_dataset_from_tfds('celeb_a', config)
+    with open(os.path.join(config['data_path'], 'metadata.pickle'), 'rb') as f:
+        info = pickle.load(f)
+    config.update(info)
 
-        print("Load: {} of {} records".format(config['data_size'], config['num_records']))
-        if config['use_image_generator']:
-            dataset = get_dataset_from_generator(config)
-        else:
-            dataset = get_dataset_from_tfrecord(config)
+    print("Load: {} of {} records".format(config['data_size'], config['num_records']))
+    if config['use_image_generator']:
+        dataset = get_dataset_from_generator(config)
+    else:
+        dataset = get_dataset_from_tfrecord(config)
     return dataset, config
 
 

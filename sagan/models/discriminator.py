@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model, Input, layers
-from layers import SpectralNormalization, AttentionLayer
+from layers import SpectralNormalization, SNConv2D, SNDense, AttentionLayer
 
 
 def Block(inputs, output_channels):
@@ -12,8 +12,8 @@ def Block(inputs, output_channels):
 
 def get_discriminator(config):
     df_dim = config['df_dim']
-    img = Input(shape=(config['img_size'], config['img_size'], 3), name='image')
-    condition_label = Input(shape=(), dtype=tf.int32, name='condition_label')
+    img = Input(shape=(config['img_size'], config['img_size'], 3), batch_size=config['batch_size'], name='image')
+    condition_label = Input(shape=(), batch_size=config['batch_size'], dtype=tf.int32, name='condition_label')
     x = img
     
     # to handle different size of images.
@@ -26,8 +26,9 @@ def get_discriminator(config):
     if config['use_label']:
         x = tf.reduce_sum(x, axis=[1,2])
         outputs = layers.Dense(1)(x)
-        embedding = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))
-        label_feature = SpectralNormalization(embedding)(condition_label)
+        # embedding = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))
+        # label_feature = SpectralNormalization(embedding)(condition_label)
+        label_feature = layers.Embedding(config['num_classes'], df_dim * 2 ** (power-1))(condition_label)
         outputs += tf.reduce_sum(x * label_feature, axis=1, keepdims=True)
         return Model(inputs=[img, condition_label], outputs=outputs)
     else:
@@ -42,8 +43,8 @@ def Optimized_Block(inputs, output_channels):
     conv = layers.Conv2D(output_channels, 3, 2, padding='same') # downsample
     x = SpectralNormalization(conv)(x)
 
-    conv = layers.Conv2D(output_channels, 3, 2, padding='same')
-    x_ = SpectralNormalization(conv)(inputs)
+    conv_ = layers.Conv2D(output_channels, 3, 2, padding='same')
+    x_ = SpectralNormalization(conv_)(inputs)
 
     return layers.add([x_, x])
 
@@ -57,11 +58,11 @@ def Res_Block(inputs, output_channels, downsample=True):
     x = layers.LeakyReLU(alpha=0.1)(x)
     conv = layers.Conv2D(output_channels, 3, stride, padding='same')
     x = SpectralNormalization(conv)(x)
-
+    
     x_ = layers.LeakyReLU(alpha=0.1)(inputs)
-    conv = layers.Conv2D(output_channels, 3, stride, padding='same')
-    x_ = SpectralNormalization(conv)(x_)
-
+    conv_ = layers.Conv2D(output_channels, 3, stride, padding='same')(x_)
+    x = SpectralNormalization(conv_)(x_)
+    
     return layers.add([x_, x])
 
 def get_res_discriminator(config):
@@ -83,8 +84,11 @@ def get_res_discriminator(config):
         x = layers.ReLU()(x)
         x = tf.reduce_sum(x, axis=[1,2])
         outputs = SpectralNormalization(layers.Dense(1))(x)
-        embedding = layers.Embedding(config['num_classes'], df_dim * 16)
-        label_feature = SpectralNormalization(embedding)(condition_label)
+    
+        # embedding = layers.Embedding(config['num_classes'], df_dim * 16)
+        # label_feature = SpectralNormalization(embedding)(condition_label)
+        label_feature = layers.Embedding(config['num_classes'], df_dim * 16)(condition_label)
+        
         outputs += tf.reduce_sum(x * label_feature, axis=1, keepdims=True)
         return Model(inputs=[img, condition_label], outputs=outputs)
     else:

@@ -13,12 +13,12 @@ def Block(inputs, output_channels):
 
 def get_generator(config):
     gf_dim = config['gf_dim']
-    z = Input(shape=(config['z_dim'],), name='noisy')
-    condition_label = Input(shape=(), dtype=tf.int32, name='condition_label')
+    z = Input(shape=(config['z_dim'],), batch_size=config['batch_size'], name='noisy')
+    condition_label = Input(shape=(), batch_size=config['batch_size'], dtype=tf.int32, name='condition_label')
     
     if config['use_label']:
         one_hot_label = tf.one_hot(condition_label, depth=config['num_classes'])
-        x = layers.Concatenate()([z, one_hot_label])
+        x = layers.Concatenate()([x, one_hot_label])
     else:
         x = z
 
@@ -49,8 +49,8 @@ def Res_Block(inputs, output_channels):
 
     x_ = layers.BatchNormalization()(inputs)
     x_ = layers.LeakyReLU(alpha=0.1)(x_)
-    convtr = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
-    x_ = SpectralNormalization(convtr)(x_)
+    convtr_ = layers.Conv2DTranspose(output_channels, 3, 2, padding='same', activation='relu', use_bias=False)
+    x_ = SpectralNormalization(convtr_)(x_)
 
     return layers.add([x_, x])
 

@@ -39,6 +39,7 @@ def colorize(img):
         img = img.reshape(img.shape[0], img.shape[1], 1)
         img = np.concatenate([img, img, img], axis=2)
     
+    # throw up Alpha in RGBA images
     if img.shape[2] == 4:
         img = img[:, :, 0:3]
     return img
