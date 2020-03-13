@@ -1,12 +1,21 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-
-# This Weight Normalization is directly copy from tff addon source code for testing.
-# Since tf addon use TF2.1
-class WeightNormalization(tf.keras.layers.Wrapper):
+class SpectralNormalization(tf.keras.layers.Wrapper):
+    """This wrapper is modified from 
+    https://github.com/tensorflow/addons/blob/v0.7.1/tensorflow_addons/layers/wrappers.py
+    
+    
+    Arguments:
+      layer: a layer instance.
+      data_init: If `True` use data dependent variable initialization
+    Raises:
+      ValueError: If not initialized with a `Layer` instance.
+      ValueError: If `Layer` does not contain a `kernel` of weights
+      NotImplementedError: If `data_init` is True and running graph execution
+    """
 
     def __init__(self, layer, data_init=True, **kwargs):
-        super(WeightNormalization, self).__init__(layer, **kwargs)
+        super(SpectralNormalization, self).__init__(layer, **kwargs)
         self.data_init = data_init
         self._track_trackable(layer, name='layer')
         self._init_critical_section = tf.CriticalSection(name='init_mutex')
@@ -39,18 +48,32 @@ class WeightNormalization(tf.keras.layers.Wrapper):
 
         # The kernel's filter or unit dimension is -1
         self.layer_depth = int(kernel.shape[-1])
+        self.temporal_dim = int(tf.reshape(kernel, [-1, self.layer_depth]).shape[0])
         self.kernel_norm_axes = list(range(kernel.shape.rank - 1))
-
+        
+        
+        self._u = self.add_weight(
+            name='u',
+            shape=(1,self.layer_depth),
+            initializer=tf.keras.initializers.GlorotNormal,
+            dtype=kernel.dtype,
+            trainable=True)
+        self._v = self.add_weight(
+            name='g',
+            shape=(1,self.temporal_dim),
+            initializer=tf.keras.initializers.GlorotNormal,
+            dtype=kernel.dtype,
+            trainable=True)
+        self._u = tf.math.l2_normalize(self._u, axis=1)
+        self._v = tf.math.l2_normalize(self._v, axis=1)
+        self.v = kernel
+        
         self.g = self.add_weight(
             name='g',
             shape=(self.layer_depth,),
             initializer='ones',
             dtype=kernel.dtype,
-            trainable=True,
-            synchronization=tf.VariableSynchronization.AUTO,
-            aggregation=tf.compat.v1.VariableAggregation.MEAN
-            )
-        self.v = kernel
+            trainable=True)
 
         self._initialized = self.add_weight(
             name='initialized',
@@ -72,7 +95,7 @@ class WeightNormalization(tf.keras.layers.Wrapper):
                     self._naked_clone_layer.activation = None
 
         self.built = True
-
+    
     def call(self, inputs):
         """Call `Layer`"""
 
@@ -86,11 +109,12 @@ class WeightNormalization(tf.keras.layers.Wrapper):
 
         g = self._init_critical_section.execute(lambda: tf.cond(
             self._initialized, _do_nothing, _update_weights))
-
+        
         with tf.name_scope('compute_weights'):
-            # Replace kernel by normalized weight variable.
-            kernel = tf.nn.l2_normalize(self.v, axis=self.kernel_norm_axes) * g
-
+            # Replace kernel by spectrally normalized weight.
+            #with tf.init_scope():
+            kernel = self.spectral_normalize()
+            
             if self.is_rnn:
                 self.layer.cell.recurrent_kernel = kernel
                 update_kernel = tf.identity(self.layer.cell.recurrent_kernel)
@@ -102,16 +126,27 @@ class WeightNormalization(tf.keras.layers.Wrapper):
             with tf.control_dependencies([update_kernel]):
                 outputs = self.layer(inputs)
                 return outputs
+            
+    def spectral_normalize(self):
+        kernel_mat = tf.reshape(self.v, [self.layer_depth, self.temporal_dim])
+        self._v = tf.math.l2_normalize(tf.matmul(self._u, kernel_mat), axis=1)
+        update_v = tf.identity(self._v)
+        with tf.control_dependencies([update_v]):
+            self._u = tf.math.l2_normalize(tf.matmul(self._v, tf.transpose(kernel_mat)), axis=1)
+            update_u = tf.identity(self._u)
+            with tf.control_dependencies([update_u]): 
+                sigma = tf.reduce_sum(tf.matmul(self._u, kernel_mat) * self._v)
+                return self.v / sigma
 
     def compute_output_shape(self, input_shape):
         return tf.TensorShape(
             self.layer.compute_output_shape(input_shape).as_list())
 
     def _initialize_weights(self, inputs):
-        """Initialize weight g.
-        The initial value of g could either from the initial value in v,
-        or by the input value if self.data_init is True.
-        """
+        #Initialize weight g.
+        #The initial value of g could either from the initial value in v,
+        #or by the input value if self.data_init is True.
+        
         with tf.control_dependencies([
                 tf.debugging.assert_equal(  # pylint: disable=bad-continuation
                     self._initialized,
@@ -126,7 +161,7 @@ class WeightNormalization(tf.keras.layers.Wrapper):
             return assign_tensors
 
     def _init_norm(self):
-        """Set the weight g with the norm of the weight vector."""
+        #Set the weight g with the norm of the weight vector.
         with tf.name_scope('init_norm'):
             v_flat = tf.reshape(self.v, [-1, self.layer_depth])
             v_norm = tf.linalg.norm(v_flat, axis=0)
@@ -134,9 +169,8 @@ class WeightNormalization(tf.keras.layers.Wrapper):
             return [g_tensor]
 
     def _data_dep_init(self, inputs):
-        """Data dependent initialization."""
+        #Data dependent initialization.
         with tf.name_scope('data_dep_init'):
-            
             # Generate data dependent init values
             x_init = self._naked_clone_layer(inputs)
             data_norm_axes = list(range(x_init.shape.rank - 1))
@@ -175,7 +209,7 @@ class WeightNormalization(tf.keras.layers.Wrapper):
             self.layer.kernel = kernel
 
         return self.layer
-    
+
 class AttentionLayer(layers.Layer):
     def __init__(self):
         super(AttentionLayer, self).__init__()
@@ -225,4 +259,3 @@ class AttentionLayer(layers.Layer):
         # atten_g = self.conv[3](atten_g)
         # return layers.add([(1-self.sigma) * inputs, self.sigma * atten_g])
         return layers.add([inputs, self.sigma * atten_g])
-
