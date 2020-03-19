@@ -80,24 +80,24 @@ class SpectralNormalization(layers.Layer):
             self.sigma.assign(self.sigma / self.factor)
         self.u.assign(u)
         self.v.assign(v)
-        
+        new_value = W / self.sigma
+        print("new value type: ", type(new_value))
 
         # print("sigma value: ", sigma)
-        assign_fn = lambda var, sigma, *a, **kw: var.assign(var / sigma)
+        assign_fn = lambda var, new_value: var.assign(new_value)
         # tf.distribute.get_replica_context().merge_call(merge_fn, args=args) #, kwargs=kwargs
-        
-        
         
         if self.called_once:
             def merge_fn(assign_fn,
                          value,
                          destinations,
-                         aggregation=tf.VariableAggregation.MEAN):
-                reduce_op = reduce_util.ReduceOp.from_variable_aggregation(aggregation)
+                         reduce_op=reduce_util.ReduceOp.MEAN):
+                # reduce_op = reduce_util.ReduceOp.from_variable_aggregation(aggregation)
                 v = self.strategy.extended.reduce_to(reduce_op, value, destinations)
 
-                return self.strategy.extended.update(W, assign_fn, args=(self.sigma,))
-            args = [assign_fn, self.sigma, W]
+                return self.strategy.extended.update(W, assign_fn, args=(v,))
+            args = [assign_fn, new_value, W]
+            #kwargs = dict(value=new_value)
             tf.distribute.get_replica_context().merge_call(merge_fn, args=args)
         else:
             self.called_once = True
