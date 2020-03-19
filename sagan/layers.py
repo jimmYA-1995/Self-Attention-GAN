@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.python.distribute import reduce_util
 
 def l2normalize(v, eps=1e-12):
     return tf.math.divide(v,(tf.norm(v) + eps))
@@ -12,11 +13,15 @@ class SpectralNormalization(layers.Layer):
     def __init__(self, module, name="weights", Ip=1, factor=None):
         super(SpectralNormalization, self).__init__()
         self.module = module
+        self.weight_name = name
+        self.called_once = None
 
         if not Ip >= 1:
             raise ValueError("The number of power iterations should be positive integer")
         self.Ip = Ip
         self.factor = factor
+        if tf.distribute.in_cross_replica_context():
+            self.strategy = tf.distribute.get_strategy()
 
     def _check_param(self):
         try:
@@ -28,7 +33,6 @@ class SpectralNormalization(layers.Layer):
 
     def _make_param(self):
         w = getattr(self.module, self.weight_name)[0]
-        w._aggregation = tf.VariableAggregation.MEAN
         height = w.shape[-1]
         width = tf.reshape(w, shape=(height, -1)).shape[1]
 
@@ -36,15 +40,18 @@ class SpectralNormalization(layers.Layer):
         v = tf.random.normal(shape=[1, width])        
         self.u = tf.Variable(l2normalize(u), name='sn_u', trainable=False, aggregation=tf.VariableAggregation.MEAN)
         self.v = tf.Variable(l2normalize(v), name='sn_v', trainable=False, aggregation=tf.VariableAggregation.MEAN)
+        self.sigma = tf.Variable(0., name='sn_sigma', trainable=False, aggregation=tf.VariableAggregation.MEAN)
+        
 
     def build(self, input_shape):
-        #print("sn build", self.module.built)
+        print("sn build", self.module.built)
         self.module.build(input_shape)
         if not self._check_param():
             self._make_param()
         #print('build done')
         
     def call(self, x, training=None):
+        print("In call: ", tf.distribute.get_replica_context())
         if training:
             self.update_uv()
         return self.module.call(x)
@@ -53,6 +60,8 @@ class SpectralNormalization(layers.Layer):
     def update_uv(self):
         """ Spectrally Normalized Weight
         """
+        print("context info: ", tf.distribute.get_replica_context())
+        print("eager: ", tf.executing_eagerly())
         W = getattr(self.module, self.weight_name)[0]
         W_mat = tf.transpose(tf.reshape(W, [-1, W.shape[-1]]), [1, 0])
         u = self.u
@@ -64,14 +73,41 @@ class SpectralNormalization(layers.Layer):
             u = l2normalize(tf.matmul(v, tf.transpose(W_mat)))
             # print('u3', self.u)
                        
-        sigma = tf.reduce_sum(tf.matmul(u, W_mat) * v)
+        self.sigma.assign(tf.reduce_sum(tf.matmul(u, W_mat) * v))
 
 
         if self.factor:
-            sigma = sigma / self.factor
+            self.sigma.assign(self.sigma / self.factor)
         self.u.assign(u)
         self.v.assign(v)
-        W.assign(W / sigma)
+        
+
+        # print("sigma value: ", sigma)
+        assign_fn = lambda var, sigma, *a, **kw: var.assign(var / sigma)
+        # tf.distribute.get_replica_context().merge_call(merge_fn, args=args) #, kwargs=kwargs
+        
+        
+        
+        if self.called_once:
+            def merge_fn(assign_fn,
+                         value,
+                         destinations,
+                         aggregation=tf.VariableAggregation.MEAN):
+                reduce_op = reduce_util.ReduceOp.from_variable_aggregation(aggregation)
+                v = self.strategy.extended.reduce_to(reduce_op, value, destinations)
+
+                return self.strategy.extended.update(W, assign_fn, args=(self.sigma,))
+            args = [assign_fn, self.sigma, W]
+            tf.distribute.get_replica_context().merge_call(merge_fn, args=args)
+        else:
+            self.called_once = True
+        # else:
+        #     reduce_op = reduce_util.ReduceOp.from_variable_aggregation(tf.VariableAggregation.MEAN)
+        #     v = self.strategy.extended.reduce_to(reduce_op=reduce_op, value=sigma, destinations=W)
+        #     self.strategy.extended.update(W, assign_fn, args=(sigma, ))
+        # W.assign(W / sigma)
+        
+
 
 
 class AttentionLayer(layers.Layer):
