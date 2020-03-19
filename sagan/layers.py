@@ -12,7 +12,6 @@ class SpectralNormalization(layers.Layer):
     def __init__(self, module, name="weights", Ip=1, factor=None):
         super(SpectralNormalization, self).__init__()
         self.module = module
-        self.weight_name = name
 
         if not Ip >= 1:
             raise ValueError("The number of power iterations should be positive integer")
@@ -29,25 +28,23 @@ class SpectralNormalization(layers.Layer):
 
     def _make_param(self):
         w = getattr(self.module, self.weight_name)[0]
+        w._aggregation = tf.VariableAggregation.MEAN
         height = w.shape[-1]
         width = tf.reshape(w, shape=(height, -1)).shape[1]
 
         u = tf.random.normal(shape=[1, height])
-        print(u)
         v = tf.random.normal(shape=[1, width])        
         self.u = tf.Variable(l2normalize(u), name='sn_u', trainable=False, aggregation=tf.VariableAggregation.MEAN)
-        print(u)
         self.v = tf.Variable(l2normalize(v), name='sn_v', trainable=False, aggregation=tf.VariableAggregation.MEAN)
 
     def build(self, input_shape):
-        print("sn build", self.module.built)
+        #print("sn build", self.module.built)
         self.module.build(input_shape)
         if not self._check_param():
             self._make_param()
-        print('build done')
+        #print('build done')
         
     def call(self, x, training=None):
-        print('sn call', x, tf.executing_eagerly())
         if training:
             self.update_uv()
         return self.module.call(x)
@@ -56,20 +53,16 @@ class SpectralNormalization(layers.Layer):
     def update_uv(self):
         """ Spectrally Normalized Weight
         """
-        print('sn update_uv')
         W = getattr(self.module, self.weight_name)[0]
-        print('W', type(W), W)
-        print('u', type(self.u), self.u)
         W_mat = tf.transpose(tf.reshape(W, [-1, W.shape[-1]]), [1, 0])
-        print('u', self.u)
         u = self.u
         v = self.v
 
         for _ in range(self.Ip):
             v = l2normalize(tf.matmul(u, W_mat))
-            print('u2', self.u)
+            # print('u2', self.u)
             u = l2normalize(tf.matmul(v, tf.transpose(W_mat)))
-            print('u3', self.u)
+            # print('u3', self.u)
                        
         sigma = tf.reduce_sum(tf.matmul(u, W_mat) * v)
 
