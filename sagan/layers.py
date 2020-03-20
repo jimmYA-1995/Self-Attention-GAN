@@ -15,7 +15,7 @@ class SpectralNormalization(layers.Layer):
         self.module = module
         self.weight_name = name
         self.called_once = None
-
+        
         if not Ip >= 1:
             raise ValueError("The number of power iterations should be positive integer")
         self.Ip = Ip
@@ -40,7 +40,7 @@ class SpectralNormalization(layers.Layer):
         v = tf.random.normal(shape=[1, width])        
         self.u = tf.Variable(l2normalize(u), name='sn_u', trainable=False, aggregation=tf.VariableAggregation.MEAN)
         self.v = tf.Variable(l2normalize(v), name='sn_v', trainable=False, aggregation=tf.VariableAggregation.MEAN)
-        self.sigma = tf.Variable(0., name='sn_sigma', trainable=False, aggregation=tf.VariableAggregation.MEAN)
+        self.new_value = tf.Variable(tf.zeros_like(w), name='sn_new_val', trainable=False, aggregation=tf.VariableAggregation.MEAN)
         
 
     def build(self, input_shape):
@@ -73,30 +73,31 @@ class SpectralNormalization(layers.Layer):
             u = l2normalize(tf.matmul(v, tf.transpose(W_mat)))
             # print('u3', self.u)
                        
-        self.sigma.assign(tf.reduce_sum(tf.matmul(u, W_mat) * v))
+        sigma = tf.reduce_sum(tf.matmul(u, W_mat) * v)
 
 
         if self.factor:
-            self.sigma.assign(self.sigma / self.factor)
+            sigma = sigma / self.factor
         self.u.assign(u)
         self.v.assign(v)
-        new_value = W / self.sigma
-        print("new value type: ", type(new_value))
+        self.new_value.assign(W / sigma)
+        tmp = W / sigma
 
-        # print("sigma value: ", sigma)
+        
         assign_fn = lambda var, new_value: var.assign(new_value)
         # tf.distribute.get_replica_context().merge_call(merge_fn, args=args) #, kwargs=kwargs
         
         if self.called_once:
-            def merge_fn(assign_fn,
-                         value,
-                         destinations,
-                         reduce_op=reduce_util.ReduceOp.MEAN):
+            def merge_fn(assign_fn, *args):
+                         #value,
+                         #destinations,
+                         #reduce_op=reduce_util.ReduceOp.MEAN):
                 # reduce_op = reduce_util.ReduceOp.from_variable_aggregation(aggregation)
-                v = self.strategy.extended.reduce_to(reduce_op, value, destinations)
-
-                return self.strategy.extended.update(W, assign_fn, args=(v,))
-            args = [assign_fn, new_value, W]
+                # v = self.strategy.extended.reduce_to(reduce_op, value, destinations)
+                # print(args)
+                print(W.devices, W.values)
+                return self.strategy.extended.update(var=W, fn=assign_fn, args=(tmp,), kwargs={})
+            args = [assign_fn]
             #kwargs = dict(value=new_value)
             tf.distribute.get_replica_context().merge_call(merge_fn, args=args)
         else:
