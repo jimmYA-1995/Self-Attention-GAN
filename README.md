@@ -1,6 +1,9 @@
 # Self-Attention-GAN
 Tensorflow-2.0 implementation of Self-Attention-GAN
 
+**This barnch is still in progress**
+- [ ] reassign Mirrored Variables in replica context.
+
 Original paper: [Self-Attention Generative Adversarial Networks](https://arxiv.org/abs/1805.08318) by Han Zhang, Ian Goodfellow, Dimitris Metaxas, Augustus Odena.
 Original implementation: https://github.com/brain-research/self-attention-gan
 
