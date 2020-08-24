@@ -1,0 +1,2 @@
+from models.generator import get_generator
+from models.discriminator import get_discriminator
