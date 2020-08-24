@@ -98,11 +98,9 @@ class Trainer(object):
         self.ds_train = self.strategy.experimental_distribute_dataset(self.ds_train)
         
         with self.strategy.scope():
-            print("init. model: ", tf.distribute.get_replica_context())
             if self.config['model'] == 'vanilla':
                 self.generator = get_generator(self.config)
                 self.discriminator = get_discriminator(self.config)
-                print("finish model construction")
             #TODO: fix resnet model
             #elif config['model'] == 'resnet':
             #    self.generator = get_res_generator(config)
